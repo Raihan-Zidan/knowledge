@@ -27,14 +27,22 @@ export default {
       const entity = entityData.entities[wikidataId]?.claims || {};
       let entityDesc = entityData.entities[wikidataId]?.descriptions?.en?.value || "No description";
 
-      async function getValue(prop, label, isDate = false, latestOnly = false, isNumeric = false) {
-        if (!entity[prop]) return null;
+      console.log("Entity Data:", JSON.stringify(entity, null, 2)); // Debugging API response
+
+      async function getValue(prop, label, isDate = false, latestOnly = false, isNumeric = false, isList = false) {
+        if (!entity[prop]) {
+          console.log(`Properti ${label} (${prop}) tidak ditemukan di Wikidata`);
+          return null;
+        }
 
         let values = entity[prop].map(e => e.mainsnak?.datavalue?.value).filter(Boolean);
-        if (values.length === 0) return null;
+        if (values.length === 0) {
+          console.log(`Properti ${label} (${prop}) kosong di Wikidata`);
+          return null;
+        }
 
         if (latestOnly) {
-          values = values.slice(-1); // Ambil hanya yang terbaru
+          values = values.slice(-1);
         }
 
         if (isDate) {
@@ -42,7 +50,7 @@ export default {
         }
 
         if (isNumeric) {
-          return { label, value: values[0].amount || values[0] };
+          return { label, value: parseInt(values[0].amount || values[0]).toLocaleString() };
         }
 
         const resultValues = await Promise.all(values.map(async data => {
@@ -58,26 +66,34 @@ export default {
           return data.toString();
         }));
 
-        return { label, value: resultValues.join(", ") };
+        const fallback = "Tidak tersedia";
+        return { label, value: isList ? resultValues : resultValues.length > 0 ? resultValues.join(", ") : fallback };
       }
 
       let infobox = (await Promise.all([
-        getValue("P35", "Presiden", false, true), // Hanya presiden saat ini
+        getValue("P35", "Presiden", false, true),
         getValue("P6", "Perdana Menteri"),
-        getValue("P1082", "Jumlah penduduk", false, true, true), // Ambil hanya angka terbaru
-        getValue("P36", "Ibu kota", false, true), // Ambil ibu kota terbaru saja
+        getValue("P1082", "Jumlah penduduk", false, true, true),
+        getValue("P36", "Ibu kota", false, true),
         getValue("P30", "Benua"),
-        getValue("P112", "Pendiri"),
+        getValue("P112", "Pendiri", false, false, false, true),
         getValue("P169", "CEO"),
         getValue("P159", "Kantor pusat"),
-        getValue("P569", "Tanggal lahir", true),
-        getValue("P69", "Pendidikan"),
+        getValue("P1128", "Jumlah karyawan", false, true, true),
+        getValue("P2139", "Pendapatan", false, true, true),
+        getValue("P569", "Kelahiran", true),
+        getValue("P69", "Pendidikan", false, false, false, true),
         getValue("P26", "Pasangan"),
-        getValue("P40", "Anak"),
-        getValue("P22", "Orang tua")
+        getValue("P40", "Anak", false, false, false, true),
+        getValue("P22", "Orang tua", false, false, false, true),
+        getValue("P3373", "Saudara kandung", false, false, false, true),
+        getValue("P27", "Kewarganegaraan"),
+        getValue("P106", "Pekerjaan", false, false, false, true),
+        getValue("P166", "Penghargaan", false, false, false, true),
+        getValue("P452", "Industri"),
+        getValue("P2541", "Area operasi") // Tambahan area operasi perusahaan
       ])).filter(Boolean);
 
-      // Hilangkan Perdana Menteri kalau gak ada
       if (!infobox.some(e => e.label === "Perdana Menteri")) {
         infobox = infobox.filter(e => e.label !== "Perdana Menteri");
       }
@@ -100,7 +116,6 @@ export default {
 
       const relatedImages = await getRelatedImages(wikiData.title);
 
-      // Ambil logo perusahaan yang benar
       let logo = entity["P154"]?.[0]?.mainsnak?.datavalue?.value;
       if (logo) {
         logo = `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(logo)}?width=200`;
