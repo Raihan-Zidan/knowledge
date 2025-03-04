@@ -27,23 +27,10 @@ export default {
       const entity = entityData.entities[wikidataId]?.claims;
       let entityDesc = entityData.entities[wikidataId]?.descriptions?.en?.value || "No description";
 
-      const isCountry = entity["P31"]?.some(e => e.mainsnak?.datavalue?.value?.id === "Q6256");
-      const isHuman = entity["P31"]?.some(e => e.mainsnak?.datavalue?.value?.id === "Q5");
-      const isCompany = entity["P31"]?.some(e => e.mainsnak?.datavalue?.value?.id === "Q4830453");
+      async function getValue(prop, label, isDate = false) {
+        if (!entity[prop]) return null;
 
-      async function getRelatedImages(title) {
-        const imagesRes = await fetch(`https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=images&titles=${encodeURIComponent(title)}&gimlimit=5&prop=imageinfo&iiprop=url|thumburl`);
-        const imagesJson = await imagesRes.json();
-
-        return Object.values(imagesJson?.query?.pages || {})
-          .map(img => img.imageinfo?.[0]?.thumburl || img.imageinfo?.[0]?.url)
-          .filter(Boolean);
-      }
-
-      const relatedImages = await getRelatedImages(wikiData.title);
-
-      async function getValue(prop, label, isDate = false, multiple = false) {
-        const values = entity[prop]?.map(e => e.mainsnak?.datavalue?.value).filter(Boolean) || [];
+        const values = entity[prop].map(e => e.mainsnak?.datavalue?.value).filter(Boolean);
         if (values.length === 0) return null;
 
         if (isDate) {
@@ -59,52 +46,44 @@ export default {
           return data;
         }));
 
-        return { label, value: multiple ? resultValues.join(", ") : resultValues[0] };
+        return { label, value: resultValues.join(", ") };
       }
 
-      let infobox = (await Promise.all([
-        isCountry ? getValue("P36", "Ibu kota") : null,
-        isCountry ? getValue("P35", "Presiden") : null,
-        isCountry && entity["P6"] ? getValue("P6", "Perdana Menteri") : null,
-        isCountry ? getValue("P1082", "Jumlah penduduk") : null,
-        isCountry ? getValue("P30", "Benua") : null,
-
-        isCompany ? getValue("P112", "Pendiri", false, true) : null,
-        isCompany ? getValue("P169", "CEO") : null,
-        isCompany ? getValue("P159", "Kantor pusat") : null,
-
-        isHuman ? getValue("P569", "Tanggal lahir", true) : null,
-        isHuman ? getValue("P570", "Tanggal wafat", true) : null,
-        isHuman ? getValue("P106", "Pekerjaan", false, true) : null,
-        isHuman ? getValue("P69", "Pendidikan", false, true) : null,
-        isHuman ? getValue("P26", "Pasangan", false, true) : null,
-        isHuman ? getValue("P40", "Anak", false, true) : null,
-        isHuman ? getValue("P22", "Ayah") : null,
-        isHuman ? getValue("P25", "Ibu") : null,
-      ])).filter(Boolean);
-
-      if (isCountry) {
-        const populationItem = infobox.find(item => item.label === "Jumlah penduduk");
-        if (populationItem) {
-          populationItem.value = populationItem.value.toString();
+      async function getAllInfobox() {
+        let infobox = [];
+        for (const prop in entity) {
+          if (entity.hasOwnProperty(prop)) {
+            const data = await getValue(prop, prop);
+            if (data) infobox.push(data);
+          }
         }
+        return infobox;
       }
 
-      let image = wikiData.originalimage?.source || null;
+      let infobox = await getAllInfobox();
 
-      if (isCompany) {
-        let logo = entity["P154"]?.[0]?.mainsnak?.datavalue?.value || null;
-        if (logo) {
-          image = `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(logo)}?width=200`;
-        }
+      // Fix untuk presiden & perdana menteri
+      if (infobox.some(e => e.label === "P6")) {
+        infobox = infobox.map(e => (e.label === "P6" ? { label: "Perdana Menteri", value: e.value } : e));
+      } else {
+        infobox = infobox.filter(e => e.label !== "Perdana Menteri");
+      }
+
+      if (infobox.some(e => e.label === "P35")) {
+        infobox = infobox.map(e => (e.label === "P35" ? { label: "Presiden", value: e.value } : e));
+      }
+
+      // Fix jumlah penduduk
+      const populationItem = infobox.find(e => e.label === "P1082");
+      if (populationItem) {
+        populationItem.label = "Jumlah penduduk";
+        populationItem.value = populationItem.value.toString();
       }
 
       const result = {
         title: wikiData.title,
         type: entityDesc,
         description: wikiData.extract,
-        image,
-        related_images: relatedImages,
         infobox,
         source: "Wikipedia",
         url: wikiData.content_urls.desktop.page,
