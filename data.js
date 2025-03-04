@@ -27,20 +27,22 @@ export default {
       const entity = entityData.entities[wikidataId]?.claims;
       const entityDesc = entityData.entities[wikidataId]?.descriptions?.en?.value || "No description";
 
-      const isCompany = entity["P31"]?.some(e => e.mainsnak?.datavalue?.value?.id === "Q4830453");
+      const isImportant = ["Q5", "Q6256"].some(type => entity["P31"]?.some(e => e.mainsnak?.datavalue?.value?.id === type));
 
-      let logo = null;
-      if (isCompany && entity["P154"]) {
-        const logoFile = entity["P154"][0]?.mainsnak?.datavalue?.value;
-        if (logoFile) {
-          logo = `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(logoFile)}?width=300`;
-        }
-      }
-      if (!logo) {
-        logo = wikiData.originalimage?.source || "Tidak tersedia";
+      let logo = wikiData.originalimage?.source || "Tidak tersedia";
+
+      async function getRelatedImages(title) {
+        const imagesRes = await fetch(`https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=images&titles=${encodeURIComponent(title)}&gimlimit=5&prop=imageinfo&iiprop=url`);
+        const imagesJson = await imagesRes.json();
+
+        return Object.values(imagesJson?.query?.pages || {})
+          .map(img => img.imageinfo?.[0]?.url)
+          .filter(Boolean);
       }
 
-      const getValue = async (prop, label, isDate = false, multiple = false) => {
+      const relatedImages = isImportant ? await getRelatedImages(wikiData.title) : [];
+
+      const getValue = async (prop, label, isDate = false, multiple = false, filterAwards = false) => {
         const values = entity[prop]?.map(e => e.mainsnak?.datavalue?.value).filter(Boolean) || [];
         if (values.length === 0) return null;
 
@@ -52,12 +54,18 @@ export default {
           if (typeof data === "object" && data.id) {
             const labelRes = await fetch(`https://www.wikidata.org/wiki/Special:EntityData/${data.id}.json`);
             const labelJson = await labelRes.json();
-            return labelJson.entities[data.id]?.labels?.en?.value || "Unknown";
+            const labelValue = labelJson.entities[data.id]?.labels?.en?.value || "Unknown";
+
+            if (filterAwards && ["Star of the Republic of Indonesia", "Bintang Mahaputera"].includes(labelValue)) {
+              return null;
+            }
+            return labelValue;
           }
           return data;
         }));
 
-        return { label, value: multiple ? resultValues.join(", ") : resultValues[0] };
+        const filteredValues = resultValues.filter(Boolean);
+        return filteredValues.length > 0 ? { label, value: multiple ? filteredValues.join(", ") : filteredValues[0] } : null;
       };
 
       let infobox = (await Promise.all([
@@ -65,10 +73,10 @@ export default {
         getValue("P112", "Pendiri", false, true),
         getValue("P749", "Induk"),
         getValue("P159", "Kantor pusat"),
-        getValue("P39", "Jabatan"),
+        getValue("P39", "Jabatan", false, true),
         getValue("P569", "Tanggal lahir", true),
         getValue("P570", "Tanggal wafat", true),
-        getValue("P166", "Penghargaan"),
+        getValue("P166", "Penghargaan", false, true, true),
         getValue("P101", "Bidang"),
         getValue("P106", "Profesi"),
         getValue("P495", "Negara produksi"),
@@ -88,11 +96,31 @@ export default {
 
       infobox = infobox.filter(item => !(item.label === "Situs web" && !item.value.includes(query.toLowerCase())));
 
+      infobox = infobox.map(item => {
+        if (item.label === "Jabatan") {
+          const positions = entity["P39"] || [];
+          const updatedValues = positions.map(pos => {
+            const posData = pos.mainsnak?.datavalue?.value?.id;
+            const startTime = pos.qualifiers?.P580?.[0]?.datavalue?.value?.time?.substring(1, 11);
+            const endTime = pos.qualifiers?.P582?.[0]?.datavalue?.value?.time?.substring(1, 11);
+
+            if (posData && (startTime || endTime)) {
+              return `${item.value} (${startTime || "?"} - ${endTime || "sekarang"})`;
+            }
+            return item.value;
+          });
+
+          return { label: "Jabatan", value: updatedValues.join(", ") };
+        }
+        return item;
+      });
+
       const result = {
         title: wikiData.title,
         type: entityDesc,
         description: wikiData.extract,
         logo,
+        related_images: relatedImages,
         infobox,
         source: "Wikipedia",
         url: wikiData.content_urls.desktop.page,
