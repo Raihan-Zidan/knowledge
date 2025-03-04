@@ -62,8 +62,7 @@ export default {
       }
 
       let infobox = (await Promise.all([
-        getValue("P35", "Presiden", false, true),
-        getValue("P6", "Perdana Menteri", false, true), // **Ambil hanya yang terbaru**
+        getValue("P35", "Pemimpin", false, true),
         getValue("P1082", "Jumlah penduduk", false, true, true),
         getValue("P36", "Ibu kota", false, true),
         getValue("P30", "Benua"),
@@ -89,7 +88,7 @@ export default {
         getValue("P127", "Pemilik"),
 
         getValue("P355", "Anak perusahaan"),
-getValue("P2046", "Luas wilayah"),
+getValue("P2046", "Luas wilayah", true),
 getValue("P37", "Bahasa"),
       ])).filter(Boolean);
 
