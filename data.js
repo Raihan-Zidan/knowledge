@@ -86,8 +86,6 @@ export default {
                 
         getValue("P571", "Berdiri"),
         getValue("P127", "Pemilik"),
-        getValue("P31", "Jenis"),
-        getValue("P2936", "Terkait"),
       ])).filter(Boolean);
 
 async function getRelatedImages(title) {
