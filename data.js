@@ -20,26 +20,48 @@ export default {
       const pageId = wikiData.pageid;
       const wikidataRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&prop=pageprops&pageids=${pageId}&format=json`);
       const wikidataJson = await wikidataRes.json();
-      const wikidataId = wikidataJson.query.pages[pageId].pageprops.wikibase_item;
+      const wikidataId = wikidataJson.query.pages[pageId]?.pageprops?.wikibase_item;
+
+      if (!wikidataId) throw new Error("Wikidata ID not found");
 
       // Fetch Wikidata entity data
       const entityRes = await fetch(`https://www.wikidata.org/wiki/Special:EntityData/${wikidataId}.json`);
       const entityData = await entityRes.json();
-      const entity = entityData.entities[wikidataId].claims;
+      const entity = entityData.entities[wikidataId]?.claims;
 
-      // Ambil data penting dari Wikidata
-      const getValue = (prop) => entity[prop]?.[0]?.mainsnak?.datavalue?.value || "Tidak tersedia";
-      
+      if (!entity) throw new Error("Wikidata entity data not found");
+
+      // Fungsi untuk ambil label dari Wikidata
+      const getValue = async (prop, label) => {
+        const data = entity[prop]?.[0]?.mainsnak?.datavalue?.value;
+        if (!data) return null;
+
+        if (typeof data === "object" && data.id) {
+          const labelRes = await fetch(`https://www.wikidata.org/wiki/Special:EntityData/${data.id}.json`);
+          const labelJson = await labelRes.json();
+          return { label, value: labelJson.entities[data.id]?.labels?.en?.value || "Tidak tersedia" };
+        }
+
+        return { label, value: data };
+      };
+
+      // Ambil data infobox sesuai jenis entitas
+      const infobox = (await Promise.all([
+        getValue("P571", "Didirikan"), // Tanggal didirikan (hanya untuk perusahaan)
+        getValue("P112", "Pendiri"), // Founder
+        getValue("P749", "Induk"), // Parent company
+        getValue("P159", "Kantor pusat"), // Headquarters (hanya untuk perusahaan)
+        getValue("P39", "Jabatan"), // Posisi (misal "Presiden Indonesia")
+        getValue("P569", "Tanggal lahir"), // Tanggal lahir (untuk orang)
+        getValue("P570", "Tanggal wafat") // Tanggal wafat (jika ada)
+      ])).filter(Boolean); // Hapus yang null
+
+      // Hasil API
       const result = {
         title: wikiData.title,
         description: wikiData.extract,
         logo: wikiData.originalimage?.source || "Tidak tersedia",
-        infobox: {
-          didirikan: getValue("P112"), // Founders
-          induk: getValue("P749"), // Parent company
-          kantor_pusat: getValue("P159"), // Headquarters
-          situs_web: getValue("P856"), // Official website
-        },
+        infobox,
         source: "Wikipedia & Wikidata",
         url: wikiData.content_urls.desktop.page,
       };
