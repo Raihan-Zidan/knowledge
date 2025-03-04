@@ -24,7 +24,7 @@ export default {
 
       const entityRes = await fetch(`https://www.wikidata.org/wiki/Special:EntityData/${wikidataId}.json`);
       const entityData = await entityRes.json();
-      const entity = entityData.entities[wikidataId]?.claims;
+      const entity = entityData.entities[wikidataId]?.claims || {};
       let entityDesc = entityData.entities[wikidataId]?.descriptions?.en?.value || "No description";
 
       async function getValue(prop, label, isDate = false) {
@@ -39,51 +39,71 @@ export default {
 
         const resultValues = await Promise.all(values.map(async data => {
           if (typeof data === "object" && data.id) {
-            const labelRes = await fetch(`https://www.wikidata.org/wiki/Special:EntityData/${data.id}.json`);
-            const labelJson = await labelRes.json();
-            return labelJson.entities[data.id]?.labels?.en?.value || "Unknown";
+            try {
+              const labelRes = await fetch(`https://www.wikidata.org/wiki/Special:EntityData/${data.id}.json`);
+              const labelJson = await labelRes.json();
+              return labelJson.entities[data.id]?.labels?.en?.value || "Unknown";
+            } catch {
+              return "Unknown";
+            }
           }
-          return data;
+          return data.toString();
         }));
 
         return { label, value: resultValues.join(", ") };
       }
 
-      async function getAllInfobox() {
-        let infobox = [];
-        for (const prop in entity) {
-          if (entity.hasOwnProperty(prop)) {
-            const data = await getValue(prop, prop);
-            if (data) infobox.push(data);
-          }
-        }
-        return infobox;
+      let infobox = (await Promise.all([
+        getValue("P35", "Presiden"), 
+        getValue("P6", "Perdana Menteri"),
+        getValue("P1082", "Jumlah penduduk"),
+        getValue("P36", "Ibu kota"),
+        getValue("P30", "Benua"),
+        getValue("P112", "Pendiri"),
+        getValue("P169", "CEO"),
+        getValue("P159", "Kantor pusat"),
+        getValue("P569", "Tanggal lahir", true),
+        getValue("P69", "Pendidikan"),
+        getValue("P26", "Pasangan"),
+        getValue("P40", "Anak"),
+        getValue("P22", "Orang tua")
+      ])).filter(Boolean);
+
+      // Fix jumlah penduduk jadi string
+      const populationItem = infobox.find(e => e.label === "Jumlah penduduk");
+      if (populationItem) {
+        populationItem.value = populationItem.value.toString();
       }
 
-      let infobox = await getAllInfobox();
-
-      // Fix untuk presiden & perdana menteri
-      if (infobox.some(e => e.label === "P6")) {
-        infobox = infobox.map(e => (e.label === "P6" ? { label: "Perdana Menteri", value: e.value } : e));
-      } else {
+      // Hilangkan Perdana Menteri kalau gak ada
+      if (!infobox.some(e => e.label === "Perdana Menteri")) {
         infobox = infobox.filter(e => e.label !== "Perdana Menteri");
       }
 
-      if (infobox.some(e => e.label === "P35")) {
-        infobox = infobox.map(e => (e.label === "P35" ? { label: "Presiden", value: e.value } : e));
+      async function getRelatedImages(title) {
+        try {
+          const imagesRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&prop=images&titles=${encodeURIComponent(title)}&format=json`);
+          const imagesJson = await imagesRes.json();
+          const imageTitles = Object.values(imagesJson.query.pages || {}).flatMap(p => p.images?.map(img => img.title) || []);
+          const imageUrls = await Promise.all(imageTitles.map(async title => {
+            const urlRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}&prop=imageinfo&iiprop=url&format=json`);
+            const urlJson = await urlRes.json();
+            return Object.values(urlJson.query.pages || {}).map(p => p.imageinfo?.[0]?.url).filter(Boolean);
+          }));
+          return imageUrls.flat();
+        } catch {
+          return [];
+        }
       }
 
-      // Fix jumlah penduduk
-      const populationItem = infobox.find(e => e.label === "P1082");
-      if (populationItem) {
-        populationItem.label = "Jumlah penduduk";
-        populationItem.value = populationItem.value.toString();
-      }
+      const relatedImages = await getRelatedImages(wikiData.title);
 
       const result = {
         title: wikiData.title,
         type: entityDesc,
         description: wikiData.extract,
+        image: wikiData.originalimage?.source || null,
+        related_images: relatedImages,
         infobox,
         source: "Wikipedia",
         url: wikiData.content_urls.desktop.page,
