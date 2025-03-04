@@ -79,7 +79,6 @@ export default {
         getValue("P3373", "Saudara kandung"),
         getValue("P27", "Kewarganegaraan"),
         getValue("P106", "Pekerjaan"),
-        getValue("P166", "Penghargaan"),
         getValue("P452", "Industri"),
         getValue("P2541", "Area operasi"), // **Tambahan area operasi perusahaan**
                 
@@ -139,7 +138,7 @@ async function getRelatedImages(title) {
         headers: { "Content-Type": "application/json" },
       });
     } catch (error) {
-      return new Response(JSON.stringify({ error: "Data tidak ditemukan" }, null, 2), {
+      return new Response(JSON.stringify({ error: `Data tidak ditemukan ${error.message}` }, null, 2), {
         headers: { "Content-Type": "application/json" },
         status: 404,
       });
