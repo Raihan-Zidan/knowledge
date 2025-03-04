@@ -65,28 +65,23 @@ export default {
       let infobox = (await Promise.all([
         isCountry ? getValue("P36", "Ibu kota") : null,
         isCountry ? getValue("P35", "Presiden") : null,
-        isCountry ? getValue("P6", "Perdana Menteri") : null,
+        isCountry && entity["P6"] ? getValue("P6", "Perdana Menteri") : null,
         isCountry ? getValue("P1082", "Jumlah penduduk") : null,
         isCountry ? getValue("P30", "Benua") : null,
+
         isCompany ? getValue("P112", "Pendiri", false, true) : null,
         isCompany ? getValue("P169", "CEO") : null,
         isCompany ? getValue("P159", "Kantor pusat") : null,
-        isCompany ? getValue("P17", "Negara asal") : null,
+
         isHuman ? getValue("P569", "Tanggal lahir", true) : null,
+        isHuman ? getValue("P570", "Tanggal wafat", true) : null,
+        isHuman ? getValue("P106", "Pekerjaan", false, true) : null,
         isHuman ? getValue("P69", "Pendidikan", false, true) : null,
+        isHuman ? getValue("P26", "Pasangan", false, true) : null,
+        isHuman ? getValue("P40", "Anak", false, true) : null,
+        isHuman ? getValue("P22", "Ayah") : null,
+        isHuman ? getValue("P25", "Ibu") : null,
       ])).filter(Boolean);
-
-      if (isCountry) {
-        infobox = infobox.filter(item => item.label !== "Didirikan");
-      }
-
-      if (isCompany) {
-        let logo = entity["P154"]?.[0]?.mainsnak?.datavalue?.value || null;
-        if (logo) {
-          logo = `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(logo)}?width=200`;
-        }
-        wikiData.originalimage = { source: logo };
-      }
 
       if (isCountry) {
         const populationItem = infobox.find(item => item.label === "Jumlah penduduk");
@@ -95,11 +90,20 @@ export default {
         }
       }
 
+      let image = wikiData.originalimage?.source || null;
+
+      if (isCompany) {
+        let logo = entity["P154"]?.[0]?.mainsnak?.datavalue?.value || null;
+        if (logo) {
+          image = `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(logo)}?width=200`;
+        }
+      }
+
       const result = {
         title: wikiData.title,
         type: entityDesc,
         description: wikiData.extract,
-        image: wikiData.originalimage?.source || null,
+        image,
         related_images: relatedImages,
         infobox,
         source: "Wikipedia",
