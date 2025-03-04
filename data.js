@@ -27,11 +27,15 @@ export default {
       const entity = entityData.entities[wikidataId]?.claims || {};
       let entityDesc = entityData.entities[wikidataId]?.descriptions?.en?.value || "No description";
 
-      async function getValue(prop, label, isDate = false) {
+      async function getValue(prop, label, isDate = false, latestOnly = false) {
         if (!entity[prop]) return null;
 
-        const values = entity[prop].map(e => e.mainsnak?.datavalue?.value).filter(Boolean);
+        let values = entity[prop].map(e => e.mainsnak?.datavalue?.value).filter(Boolean);
         if (values.length === 0) return null;
+
+        if (latestOnly) {
+          values = values.sort((a, b) => (b.rank === "preferred" ? 1 : -1)).slice(0, 1);
+        }
 
         if (isDate) {
           return { label, value: values[0].time.substring(1, 11) };
@@ -54,7 +58,7 @@ export default {
       }
 
       let infobox = (await Promise.all([
-        getValue("P35", "Presiden"), 
+        getValue("P35", "Presiden", false, true), // Hanya presiden saat ini
         getValue("P6", "Perdana Menteri"),
         getValue("P1082", "Jumlah penduduk"),
         getValue("P36", "Ibu kota"),
@@ -98,6 +102,12 @@ export default {
 
       const relatedImages = await getRelatedImages(wikiData.title);
 
+      // Ambil logo perusahaan yang benar
+      let logo = entity["P154"]?.[0]?.mainsnak?.datavalue?.value;
+      if (logo) {
+        logo = `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(logo)}?width=200`;
+      }
+
       const result = {
         title: wikiData.title,
         type: entityDesc,
@@ -107,6 +117,7 @@ export default {
         infobox,
         source: "Wikipedia",
         url: wikiData.content_urls.desktop.page,
+        logo
       };
 
       return new Response(JSON.stringify({ query, results: [result] }, null, 2), {
