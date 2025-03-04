@@ -85,21 +85,29 @@ export default {
         getValue("P2541", "Area operasi") // **Tambahan area operasi perusahaan**
       ])).filter(Boolean);
 
-      async function getRelatedImages(title) {
-        try {
-          const imagesRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&prop=images&titles=${encodeURIComponent(title)}&format=json`);
-          const imagesJson = await imagesRes.json();
-          const imageTitles = Object.values(imagesJson.query.pages || {}).flatMap(p => p.images?.map(img => img.title) || []);
-          const imageUrls = await Promise.all(imageTitles.map(async title => {
-            const urlRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}&prop=imageinfo&iiprop=url&format=json`);
-            const urlJson = await urlRes.json();
-            return Object.values(urlJson.query.pages || {}).map(p => p.imageinfo?.[0]?.url).filter(Boolean);
-          }));
-          return imageUrls.flat();
-        } catch {
-          return [];
-        }
-      }
+async function getRelatedImages(title) {
+  try {
+    const imagesRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&prop=images&titles=${encodeURIComponent(title)}&format=json`);
+    const imagesJson = await imagesRes.json();
+    const imageTitles = Object.values(imagesJson.query.pages || {}).flatMap(p => p.images?.map(img => img.title) || []);
+
+    const imageUrls = await Promise.all(imageTitles.map(async title => {
+      const urlRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}&prop=imageinfo&iiprop=url|size&format=json`);
+      const urlJson = await urlRes.json();
+      return Object.values(urlJson.query.pages || {}).map(p => ({
+        url: p.imageinfo?.[0]?.url,
+        size: p.imageinfo?.[0]?.width || 0
+      })).filter(Boolean);
+    }));
+
+    return imageUrls.flat()
+      .filter(img => img.size > 100) // **Skip gambar kecil (biasanya icon)**
+      .filter(img => !/icon|symbol|logo|Crystal_Clear|OOjs|Flag_of|Industry\d/i.test(img.url)) // **Skip gambar icon/simbol yang nggak relevan**
+      .map(img => img.url);
+  } catch {
+    return [];
+  }
+}
 
       const relatedImages = await getRelatedImages(wikiData.title);
 
