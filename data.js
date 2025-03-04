@@ -4,7 +4,7 @@ export default {
     const query = url.searchParams.get("q");
 
     if (!query) {
-      return new Response(JSON.stringify({ error: "Query tidak boleh kosong" }), {
+      return new Response(JSON.stringify({ error: "Query tidak boleh kosong" }, null, 2), {
         headers: { "Content-Type": "application/json" },
         status: 400,
       });
@@ -30,13 +30,31 @@ export default {
       const entity = entityData.entities[wikidataId]?.claims;
       const entityDesc = entityData.entities[wikidataId]?.descriptions?.en?.value || "No description";
 
-      // Cek apakah entitas ini manusia (P31: Q5)
-      const isHuman = entity["P31"]?.some(e => e.mainsnak?.datavalue?.value?.id === "Q5");
+      // Cek apakah entitas ini perusahaan (P31: Q4830453)
+      const isCompany = entity["P31"]?.some(e => e.mainsnak?.datavalue?.value?.id === "Q4830453");
+
+      // Ambil logo perusahaan dari Wikidata (P154)
+      let logo = null;
+      if (isCompany && entity["P154"]) {
+        const logoFile = entity["P154"][0]?.mainsnak?.datavalue?.value;
+        if (logoFile) {
+          logo = `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(logoFile)}?width=300`;
+        }
+      }
+
+      // Jika tidak ada logo di Wikidata, fallback ke Wikipedia
+      if (!logo) {
+        logo = wikiData.originalimage?.source || "Tidak tersedia";
+      }
 
       // Fungsi ambil nilai Wikidata
-      const getValue = async (prop, label) => {
+      const getValue = async (prop, label, isDate = false) => {
         const data = entity[prop]?.[0]?.mainsnak?.datavalue?.value;
         if (!data) return null;
+
+        if (isDate && data.time) {
+          return { label, value: data.time.substring(1, 11) }; // Format tanggal langsung string (YYYY-MM-DD)
+        }
 
         if (typeof data === "object" && data.id) {
           const labelRes = await fetch(`https://www.wikidata.org/wiki/Special:EntityData/${data.id}.json`);
@@ -49,31 +67,28 @@ export default {
 
       // Ambil properti utama
       let infobox = (await Promise.all([
-        getValue("P571", "Didirikan"),
+        getValue("P571", "Didirikan", true),
         getValue("P112", "Pendiri"),
         getValue("P749", "Induk"),
         getValue("P159", "Kantor pusat"),
         getValue("P39", "Jabatan"),
-        getValue("P569", "Tanggal lahir"),
-        getValue("P570", "Tanggal wafat"),
-        isHuman ? null : getValue("P17", "Negara asal"), // Hapus negara asal untuk manusia
+        getValue("P569", "Tanggal lahir", true),
+        getValue("P570", "Tanggal wafat", true),
         getValue("P166", "Penghargaan"),
         getValue("P101", "Bidang"),
         getValue("P106", "Profesi"),
         getValue("P495", "Negara produksi"),
-        getValue("P577", "Tanggal rilis")
+        getValue("P577", "Tanggal rilis", true)
       ])).filter(Boolean);
 
       // Properti tambahan kalau infobox kurang dari 5
       if (infobox.length < 5) {
         const extraProps = await Promise.all([
-          getValue("P18", "Gambar"),
-          getValue("P856", "Situs web"),
+          getValue("P856", "Situs web"), // Akan difilter nanti
           getValue("P625", "Koordinat"),
-          isHuman ? getValue("P102", "Partai politik") : null, // Tambah partai politik untuk manusia
-          isHuman ? getValue("P69", "Pendidikan") : null, // Tambah pendidikan untuk manusia
-          getValue("P212", "ISBN"),
-          getValue("P31", "Jenis entitas")
+          getValue("P102", "Partai politik"),
+          getValue("P69", "Pendidikan"),
+          getValue("P212", "ISBN")
         ]);
         infobox.push(...extraProps.filter(Boolean));
 
@@ -82,22 +97,25 @@ export default {
         }
       }
 
+      // Hapus "Situs web" jika bukan situs pribadi
+      infobox = infobox.filter(item => !(item.label === "Situs web" && !item.value.includes(query.toLowerCase())));
+
       // Hasil API
       const result = {
         title: wikiData.title,
         type: entityDesc,
         description: wikiData.extract,
-        logo: wikiData.originalimage?.source || "Tidak tersedia",
+        logo,
         infobox,
         source: "Wikipedia & Wikidata",
         url: wikiData.content_urls.desktop.page,
       };
 
-      return new Response(JSON.stringify({ query, results: [result] }), {
+      return new Response(JSON.stringify({ query, results: [result] }, null, 2), {
         headers: { "Content-Type": "application/json" },
       });
     } catch (error) {
-      return new Response(JSON.stringify({ error: "Data tidak ditemukan" }), {
+      return new Response(JSON.stringify({ error: "Data tidak ditemukan" }, null, 2), {
         headers: { "Content-Type": "application/json" },
         status: 404,
       });
