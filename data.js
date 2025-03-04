@@ -25,7 +25,7 @@ export default {
       const entityRes = await fetch(`https://www.wikidata.org/wiki/Special:EntityData/${wikidataId}.json`);
       const entityData = await entityRes.json();
       const entity = entityData.entities[wikidataId]?.claims || {};
-      let entityDesc = entityData.entities[wikidataId]?.descriptions?.en?.value || "No description";
+      let entityDesc = entityData.entities[wikidataId]?.descriptions?.id?.value || "No description";
 
       async function getValue(prop, label, isDate = false, latestOnly = false, isNumeric = false) {
         if (!entity[prop]) return null;
