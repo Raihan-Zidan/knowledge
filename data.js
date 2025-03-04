@@ -87,6 +87,10 @@ export default {
         getValue("P571", "Berdiri", true),
         getValue("P749", "Induk Perusahaan"),
         getValue("P127", "Pemilik"),
+
+        getValue("P355", "Anak perusahaan"),
+getValue("P2046", "Luas wilayah"),
+getValue("P37", "Bahasa"),
       ])).filter(Boolean);
 
 async function getRelatedImages(title) {
