@@ -84,7 +84,8 @@ export default {
         getValue("P452", "Industri"),
         getValue("P2541", "Area operasi"), // **Tambahan area operasi perusahaan**
                 
-        getValue("P571", "Berdiri"),
+        getValue("P571", "Berdiri", true),
+        getValue("P749", "Induk Perusahaan"),
         getValue("P127", "Pemilik"),
       ])).filter(Boolean);
 
