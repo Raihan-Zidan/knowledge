@@ -25,18 +25,20 @@ export default {
       const entityRes = await fetch(`https://www.wikidata.org/wiki/Special:EntityData/${wikidataId}.json`);
       const entityData = await entityRes.json();
       const entity = entityData.entities[wikidataId]?.claims;
-      const entityDesc = entityData.entities[wikidataId]?.descriptions?.en?.value || "No description";
+      let entityDesc = entityData.entities[wikidataId]?.descriptions?.en?.value || "No description";
+
+      entityDesc = entityDesc.split(",")[0]; // Hapus teks setelah koma
 
       const isImportant = ["Q5", "Q6256"].some(type => entity["P31"]?.some(e => e.mainsnak?.datavalue?.value?.id === type));
 
       let logo = wikiData.originalimage?.source || "Tidak tersedia";
 
       async function getRelatedImages(title) {
-        const imagesRes = await fetch(`https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=images&titles=${encodeURIComponent(title)}&gimlimit=5&prop=imageinfo&iiprop=url`);
+        const imagesRes = await fetch(`https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=images&titles=${encodeURIComponent(title)}&gimlimit=5&prop=imageinfo&iiprop=url|thumburl`);
         const imagesJson = await imagesRes.json();
 
         return Object.values(imagesJson?.query?.pages || {})
-          .map(img => img.imageinfo?.[0]?.url)
+          .map(img => img.imageinfo?.[0]?.thumburl) // Ambil thumbnail yang lebih kecil
           .filter(Boolean);
       }
 
