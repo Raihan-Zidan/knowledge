@@ -11,12 +11,12 @@ export default {
     }
 
     try {
-      const wikiRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`);
+      const wikiRes = await fetch(`https://id.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`);
       if (!wikiRes.ok) throw new Error("Wikipedia data not found");
       const wikiData = await wikiRes.json();
 
       const pageId = wikiData.pageid;
-      const wikidataRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&prop=pageprops&pageids=${pageId}&format=json`);
+      const wikidataRes = await fetch(`https://id.wikipedia.org/w/api.php?action=query&prop=pageprops&pageids=${pageId}&format=json`);
       const wikidataJson = await wikidataRes.json();
       const wikidataId = wikidataJson.query.pages[pageId]?.pageprops?.wikibase_item;
 
