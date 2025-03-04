@@ -27,18 +27,22 @@ export default {
       const entity = entityData.entities[wikidataId]?.claims || {};
       let entityDesc = entityData.entities[wikidataId]?.descriptions?.en?.value || "No description";
 
-      async function getValue(prop, label, isDate = false, latestOnly = false) {
+      async function getValue(prop, label, isDate = false, latestOnly = false, isNumeric = false) {
         if (!entity[prop]) return null;
 
         let values = entity[prop].map(e => e.mainsnak?.datavalue?.value).filter(Boolean);
         if (values.length === 0) return null;
 
         if (latestOnly) {
-          values = values.sort((a, b) => (b.rank === "preferred" ? 1 : -1)).slice(0, 1);
+          values = values.slice(-1); // Ambil hanya yang terbaru
         }
 
         if (isDate) {
           return { label, value: values[0].time.substring(1, 11) };
+        }
+
+        if (isNumeric) {
+          return { label, value: values[0].amount || values[0] };
         }
 
         const resultValues = await Promise.all(values.map(async data => {
@@ -60,8 +64,8 @@ export default {
       let infobox = (await Promise.all([
         getValue("P35", "Presiden", false, true), // Hanya presiden saat ini
         getValue("P6", "Perdana Menteri"),
-        getValue("P1082", "Jumlah penduduk"),
-        getValue("P36", "Ibu kota"),
+        getValue("P1082", "Jumlah penduduk", false, true, true), // Ambil hanya angka terbaru
+        getValue("P36", "Ibu kota", false, true), // Ambil ibu kota terbaru saja
         getValue("P30", "Benua"),
         getValue("P112", "Pendiri"),
         getValue("P169", "CEO"),
@@ -72,12 +76,6 @@ export default {
         getValue("P40", "Anak"),
         getValue("P22", "Orang tua")
       ])).filter(Boolean);
-
-      // Fix jumlah penduduk jadi string
-      const populationItem = infobox.find(e => e.label === "Jumlah penduduk");
-      if (populationItem) {
-        populationItem.value = populationItem.value.toString();
-      }
 
       // Hilangkan Perdana Menteri kalau gak ada
       if (!infobox.some(e => e.label === "Perdana Menteri")) {
