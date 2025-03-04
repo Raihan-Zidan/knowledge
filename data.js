@@ -1,7 +1,7 @@
 export default {
   async fetch(request) {
     const url = new URL(request.url);
-    const query = request.url.split("?q=")[1];
+    const query = url.searchParams.get("q");
 
     if (!query) {
       return new Response(JSON.stringify({ error: "Query tidak boleh kosong" }), {
@@ -16,7 +16,7 @@ export default {
       if (!wikiRes.ok) throw new Error("Wikipedia data not found");
       const wikiData = await wikiRes.json();
 
-      // Ambil Wikidata ID dari Wikipedia API
+      // Ambil Wikidata ID
       const pageId = wikiData.pageid;
       const wikidataRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&prop=pageprops&pageids=${pageId}&format=json`);
       const wikidataJson = await wikidataRes.json();
@@ -28,8 +28,10 @@ export default {
       const entityRes = await fetch(`https://www.wikidata.org/wiki/Special:EntityData/${wikidataId}.json`);
       const entityData = await entityRes.json();
       const entity = entityData.entities[wikidataId]?.claims;
-      const entityLabels = entityData.entities[wikidataId]?.labels?.en?.value || wikiData.title;
-      const entityDesc = entityData.entities[wikidataId]?.descriptions?.en?.value || wikiData.description || "No description";
+      const entityDesc = entityData.entities[wikidataId]?.descriptions?.en?.value || "No description";
+
+      // Cek apakah entitas ini manusia (P31: Q5)
+      const isHuman = entity["P31"]?.some(e => e.mainsnak?.datavalue?.value?.id === "Q5");
 
       // Fungsi ambil nilai Wikidata
       const getValue = async (prop, label) => {
@@ -45,32 +47,45 @@ export default {
         return { label, value: data };
       };
 
-      // Tambahkan properti yang lebih banyak
-      const infobox = (await Promise.all([
-        getValue("P571", "Didirikan"), // Tanggal didirikan
-        getValue("P112", "Pendiri"), // Founder
-        getValue("P749", "Induk"), // Parent company
-        getValue("P159", "Kantor pusat"), // Headquarters
-        getValue("P39", "Jabatan"), // Posisi (misal "Presiden Indonesia")
-        getValue("P569", "Tanggal lahir"), // Tanggal lahir
-        getValue("P570", "Tanggal wafat"), // Tanggal wafat
-        getValue("P17", "Negara asal"), // Negara asal
-        getValue("P166", "Penghargaan"), // Penghargaan
-        getValue("P101", "Bidang"), // Bidang kerja
-        getValue("P106", "Profesi"), // Profesi
-        getValue("P495", "Negara produksi"), // Negara produksi (misal untuk film/game)
-        getValue("P577", "Tanggal rilis"), // Tanggal rilis (misal untuk film/game)
+      // Ambil properti utama
+      let infobox = (await Promise.all([
+        getValue("P571", "Didirikan"),
+        getValue("P112", "Pendiri"),
+        getValue("P749", "Induk"),
+        getValue("P159", "Kantor pusat"),
+        getValue("P39", "Jabatan"),
+        getValue("P569", "Tanggal lahir"),
+        getValue("P570", "Tanggal wafat"),
+        isHuman ? null : getValue("P17", "Negara asal"), // Hapus negara asal untuk manusia
+        getValue("P166", "Penghargaan"),
+        getValue("P101", "Bidang"),
+        getValue("P106", "Profesi"),
+        getValue("P495", "Negara produksi"),
+        getValue("P577", "Tanggal rilis")
       ])).filter(Boolean);
 
-      // Tambahin data default kalau infobox terlalu sedikit
-      if (infobox.length < 3) {
-        infobox.push({ label: "Wikidata ID", value: wikidataId });
+      // Properti tambahan kalau infobox kurang dari 5
+      if (infobox.length < 5) {
+        const extraProps = await Promise.all([
+          getValue("P18", "Gambar"),
+          getValue("P856", "Situs web"),
+          getValue("P625", "Koordinat"),
+          isHuman ? getValue("P102", "Partai politik") : null, // Tambah partai politik untuk manusia
+          isHuman ? getValue("P69", "Pendidikan") : null, // Tambah pendidikan untuk manusia
+          getValue("P212", "ISBN"),
+          getValue("P31", "Jenis entitas")
+        ]);
+        infobox.push(...extraProps.filter(Boolean));
+
+        if (infobox.length < 5) {
+          infobox.push({ label: "Wikidata ID", value: wikidataId });
+        }
       }
 
       // Hasil API
       const result = {
         title: wikiData.title,
-        type: `${entityLabels} - ${entityDesc}`,
+        type: entityDesc,
         description: wikiData.extract,
         logo: wikiData.originalimage?.source || "Tidak tersedia",
         infobox,
