@@ -27,18 +27,17 @@ export default {
       const entity = entityData.entities[wikidataId]?.claims;
       let entityDesc = entityData.entities[wikidataId]?.descriptions?.en?.value || "No description";
 
-      entityDesc = entityDesc.split(",")[0]; // Hapus teks setelah koma
-
       const isImportant = ["Q5", "Q6256"].some(type => entity["P31"]?.some(e => e.mainsnak?.datavalue?.value?.id === type));
+      const isCompany = entity["P31"]?.some(e => e.mainsnak?.datavalue?.value?.id === "Q4830453");
 
-      let logo = wikiData.originalimage?.source || "Tidak tersedia";
+      let logo = entity["P154"]?.[0]?.mainsnak?.datavalue?.value || wikiData.originalimage?.source || "Tidak tersedia";
 
       async function getRelatedImages(title) {
         const imagesRes = await fetch(`https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=images&titles=${encodeURIComponent(title)}&gimlimit=5&prop=imageinfo&iiprop=url|thumburl`);
         const imagesJson = await imagesRes.json();
 
         return Object.values(imagesJson?.query?.pages || {})
-          .map(img => img.imageinfo?.[0]?.thumburl) // Ambil thumbnail yang lebih kecil
+          .map(img => img.imageinfo?.[0]?.thumburl)
           .filter(Boolean);
       }
 
@@ -88,7 +87,6 @@ export default {
       if (infobox.length < 5) {
         const extraProps = await Promise.all([
           getValue("P856", "Situs web"),
-          getValue("P625", "Koordinat"),
           getValue("P102", "Partai politik"),
           getValue("P69", "Pendidikan"),
           getValue("P212", "ISBN")
