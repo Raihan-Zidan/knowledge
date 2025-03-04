@@ -82,7 +82,12 @@ export default {
         getValue("P106", "Pekerjaan"),
         getValue("P166", "Penghargaan"),
         getValue("P452", "Industri"),
-        getValue("P2541", "Area operasi") // **Tambahan area operasi perusahaan**
+        getValue("P2541", "Area operasi"), // **Tambahan area operasi perusahaan**
+                
+        getValue("P571", "Berdiri"),
+        getValue("P127", "Pemilik"),
+        getValue("P31", "Jenis"),
+        getValue("P2936", "Terkait"),
       ])).filter(Boolean);
 
 async function getRelatedImages(title) {
