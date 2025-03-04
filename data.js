@@ -38,8 +38,9 @@ export default {
         }
 
         if (isDate) {
-          return { label, value: values[0].time.substring(1, 11) };
-        }
+  const dateValue = values[0]?.time;
+  return dateValue ? { label, value: dateValue.substring(1, 11) } : null;
+}
 
         if (isNumeric) {
           return { label, value: parseInt(values[0].amount || values[0]).toLocaleString() };
