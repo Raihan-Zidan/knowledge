@@ -9,140 +9,140 @@ export default {
         status: 400,
       });
     }
-     try {
 
+    try {
       const wikiRes = await fetch(`https://id.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`);
-      if (!wikiRes.ok) throw new Error("Wikipedia data not found"); //Error Lebih Spesifik
+      if (!wikiRes.ok) throw new Error("Wikipedia data not found");
       const wikiData = await wikiRes.json();
 
-        // Dapatkan Wikidata ID
-        const pageId = wikiData.pageid;
-        const wikidataRes = await fetch(`https://id.wikipedia.org/w/api.php?action=query&prop=pageprops&pageids=${pageId}&format=json`);
-        const wikidataJson = await wikidataRes.json();
-        const wikidataId = wikidataJson.query.pages[pageId]?.pageprops?.wikibase_item;
+      const pageId = wikiData.pageid;
+      const wikidataRes = await fetch(`https://id.wikipedia.org/w/api.php?action=query&prop=pageprops&pageids=${pageId}&format=json`);
+      const wikidataJson = await wikidataRes.json();
+      const wikidataId = wikidataJson.query.pages[pageId]?.pageprops?.wikibase_item;
 
-        if (!wikidataId) throw new Error("Wikidata ID not found");
+      if (!wikidataId) throw new Error("Wikidata ID not found");
 
+      const entityRes = await fetch(`https://www.wikidata.org/wiki/Special:EntityData/${wikidataId}.json`);
+      const entityData = await entityRes.json();
+      const entity = entityData.entities[wikidataId]?.claims || {};
+      let entityDesc = entityData.entities[wikidataId]?.descriptions?.id?.value || "No description";
 
-      // --- Bagian Infobox (dengan SPARQL) ---
-       async function getWikidataInfobox(wikidataId) {
-         const sparqlQuery = `
-          SELECT ?item ?itemLabel ?birthDate ?birthPlaceLabel ?population ?image ?logo ?website
-          WHERE {
-            ?item wdt:P31 wd:Q5;  #GANTI DENGAN INSTANCE OF YANG SESUAI
-                  rdfs:label ?itemLabel.
-            FILTER(LANG(?itemLabel) = "id" || LANG(?itemLabel) = "en")
+      async function getValue(prop, label, isDate = false, latestOnly = false, isNumeric = false) {
+        if (!entity[prop]) return null;
 
-            OPTIONAL { ?item wdt:P569 ?birthDate. }
-            OPTIONAL { ?item wdt:P19 ?birthPlace. }
-            OPTIONAL { ?item wdt:P1082 ?population. }
-            OPTIONAL { ?item wdt:P18 ?image. }
-            OPTIONAL { ?item wdt:P154 ?logo. }
-            OPTIONAL {?item wdt:P856 ?website. }
-            SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],id,en". }
-          }
-          LIMIT 1
-        `;
+        let values = entity[prop].map(e => e.mainsnak?.datavalue?.value).filter(Boolean);
+        if (values.length === 0) return null;
 
-          const url = `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparqlQuery)}&format=json`;
-           const response = await fetch(url, {headers: {'Accept': 'application/json'}});
-
-            if (!response.ok) {
-                throw new Error(`Wikidata API error: ${response.status}`);
-            }
-          const data = await response.json();
-          const bindings = data.results.bindings[0];
-
-          // Format hasil sesuai kebutuhan Anda
-          const infobox = {};
-
-           if (bindings?.birthDate) {
-               infobox.birthDate = {label: "Birth Date", value: bindings.birthDate.value.substring(0,10)}
-           }
-            if (bindings?.birthPlaceLabel){
-                infobox.birthPlace = {label: "Birth Place", value: bindings.birthPlaceLabel.value}
-            }
-          //... Tambahkan properti lainnya sesuai kebutuhan
-
-          return infobox;
-      }
-
-       const infobox = await getWikidataInfobox(wikidataId);
-
-      // --- Bagian Related Images (dengan Wikimedia Commons API) ---
-       async function getRelatedImagesCommons(title) {
-          let imageUrls = [];
-          let gimcontinue = null;
-
-          do {
-              let url = `https://commons.wikimedia.org/w/api.php?action=query&generator=images&titles=${encodeURIComponent(title)}&prop=imageinfo&iiprop=url|size|extmetadata&iiurlwidth=300&format=json`;
-              if (gimcontinue) {
-                  url += `&gimcontinue=${gimcontinue}`;
-              }
-
-            const res = await fetch(url);
-            const data = await res.json();
-
-              if (data.query && data.query.pages) {
-                  Object.values(data.query.pages).forEach(page => {
-                    if (page.imageinfo) {
-                      page.imageinfo.forEach(info => {
-                        if (info.width >= 200 && info.url && !info.url.toLowerCase().includes(".svg") ) {
-                            imageUrls.push(info.url);
-                        }
-                      });
-                    }
-                  });
-              }
-              gimcontinue = data.continue?.gimcontinue;
-          } while(gimcontinue)
-          return imageUrls
+        if (latestOnly) {
+          values = values.slice(-1);
         }
 
-      const relatedImages = await getRelatedImagesCommons(wikiData.title);
-         // --- Gabungkan Hasil ---
-      let logo = entity["P154"]?.[0]?.mainsnak?.datavalue?.value; //Logo tetap dari kode awal
+        if (isDate) {
+  const dateValue = values[0]?.time;
+  return dateValue ? { label, value: dateValue.substring(1, 11) } : null;
+}
+
+        if (isNumeric) {
+          return { label, value: parseInt(values[0].amount || values[0]).toLocaleString() };
+        }
+
+        const resultValues = await Promise.all(values.map(async data => {
+          if (typeof data === "object" && data.id) {
+            try {
+              const labelRes = await fetch(`https://www.wikidata.org/wiki/Special:EntityData/${data.id}.json`);
+              const labelJson = await labelRes.json();
+              return labelJson.entities[data.id]?.labels?.en?.value || "Unknown";
+            } catch {
+              return "Unknown";
+            }
+          }
+          return data.toString();
+        }));
+
+        return { label, value: resultValues.join(", ") || "Tidak tersedia" };
+      }
+
+      let infobox = (await Promise.all([
+        getValue("P35", "Pemimpin", false, true),
+        getValue("P1082", "Jumlah penduduk", false, true, true),
+        getValue("P36", "Ibu kota", false, true),
+        getValue("P30", "Benua"),
+        getValue("P112", "Pendiri"),
+        getValue("P169", "CEO"),
+        getValue("P159", "Kantor pusat"),
+        getValue("P1128", "Jumlah karyawan", false, true, true),
+        getValue("P2139", "Pendapatan", false, true, true),
+        getValue("P569", "Kelahiran", true),
+        getValue("P69", "Pendidikan"),
+        getValue("P26", "Pasangan"),
+        getValue("P40", "Anak"),
+        getValue("P22", "Orang tua"),
+        getValue("P3373", "Saudara kandung"),
+        getValue("P27", "Kewarganegaraan"),
+        getValue("P106", "Pekerjaan"),
+        getValue("P452", "Industri"),
+        getValue("P2541", "Area operasi"), // **Tambahan area operasi perusahaan**
+                
+        getValue("P571", "Berdiri", true),
+        getValue("P749", "Induk Perusahaan"),
+        getValue("P127", "Pemilik"),
+
+        getValue("P355", "Anak perusahaan"),
+getValue("P2046", "Luas wilayah", true),
+getValue("P37", "Bahasa"),
+      ])).filter(Boolean);
+
+async function getRelatedImages(title) {
+  try {
+    const imagesRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&prop=images&titles=${encodeURIComponent(title)}&format=json`);
+    const imagesJson = await imagesRes.json();
+    const imageTitles = Object.values(imagesJson.query.pages || {}).flatMap(p => p.images?.map(img => img.title) || []);
+
+    const imageUrls = await Promise.all(imageTitles.map(async title => {
+      const urlRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}&prop=imageinfo&iiprop=url|size&format=json`);
+      const urlJson = await urlRes.json();
+      return Object.values(urlJson.query.pages || {}).map(p => ({
+        url: p.imageinfo?.[0]?.url,
+        size: p.imageinfo?.[0]?.width || 0
+      })).filter(Boolean);
+    }));
+
+    return imageUrls.flat()
+      .filter(img => img.size > 100) // **Skip gambar kecil (biasanya icon)**
+      .filter(img => !/icon|symbol|logo|Crystal_Clear|OOjs|Flag_of|Industry\d/i.test(img.url)) // **Skip gambar icon/simbol yang nggak relevan**
+      .map(img => img.url);
+  } catch {
+    return [];
+  }
+}
+
+      const relatedImages = await getRelatedImages(wikiData.title);
+
+      let logo = entity["P154"]?.[0]?.mainsnak?.datavalue?.value;
       if (logo) {
         logo = `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(logo)}?width=200`;
       }
 
       const result = {
-         title: wikiData.title,
-        type: entityDesc, //Anda perlu definisikan entityDesc dari wikidata, misal ambil dari description
+        title: wikiData.title,
+        type: entityDesc,
         description: wikiData.extract,
-        image: wikiData.originalimage?.source || null, //Ambil dari wikipedia Summary
-        related_images: relatedImages, //Gambar terkait dari commons
-        infobox, //Infobox dari wikidata
-        source: "Wikipedia", //Bisa disesuaikan
+        image: wikiData.originalimage?.source || null,
+        related_images: relatedImages,
+        infobox,
+        source: "Wikipedia",
         url: wikiData.content_urls.desktop.page,
-        logo //Logo
+        logo
       };
 
-        return new Response(JSON.stringify({ query, results: [result] }, null, 2), {
+      return new Response(JSON.stringify({ query, results: [result] }, null, 2), {
         headers: { "Content-Type": "application/json" },
       });
-
-     }
-     catch (error){
-        //Error handling yang lebih spesifik
-         let status = 500;
-         let errorMessage = "Internal Server Error";
-
-         if (error.message === "Wikipedia data not found"){
-             status = 404;
-             errorMessage = "Wikipedia page not found"
-         }
-         else if (error.message === "Wikidata ID not found"){
-              status = 404;
-             errorMessage = "Wikidata ID not found for this page"
-         }
-         //Tambahkan handling error lain jika perlu
-
-         return new Response(JSON.stringify({ error: errorMessage }, null, 2), {
+    } catch (error) {
+      return new Response(JSON.stringify({ error: `Data tidak ditemukan ${error.message}` }, null, 2), {
         headers: { "Content-Type": "application/json" },
-        status: status,
+        status: 404,
       });
-     }
-
+    }
   },
 };
